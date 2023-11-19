@@ -15,3 +15,7 @@ ctest --test-dir build --output-on-failure
 ```
 
 CSV input, dependency checks, scheduling, and JSON output are implemented. calendar import and interactive replanning are still in progress.
+
+## Implementation details
+
+Availability windows are checked for overlap to prevent duplicate time allocation. CSV input supports quoted titles and empty fields, and JSON output escapes control characters.
