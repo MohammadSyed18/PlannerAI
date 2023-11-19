@@ -3,6 +3,8 @@
 #include <cassert>
 #include <iostream>
 #include <stdexcept>
+#include <fstream>
+#include <filesystem>
 
 using namespace plannerai;
 
@@ -37,6 +39,15 @@ int main() {
     dependency_order_is_preserved();
     impossible_capacity_is_reported();
     cycles_are_rejected();
-    std::cout << "3 planner tests passed\n";
+    bool overlap_rejected=false;
+    try { Scheduler().build({},{{0,60,.5},{30,90,.5}}); } catch(const std::invalid_argument&) { overlap_rejected=true; }
+    assert(overlap_rejected);
+    const auto path=std::filesystem::temp_directory_path()/"planner-quoted-csv-test.csv";
+    {std::ofstream file(path);file<<"id,title,duration,priority,deadline,chunk,load,deps\n"<<"a,\"Read, think and write\",30,3,500,10,0.5,-\n";}
+    const auto tasks=read_tasks_csv(path.string());std::filesystem::remove(path);
+    assert(tasks[0].title=="Read, think and write");
+    Plan escaped;escaped.blocks.push_back({"a","First\nsecond\tline",0,10,1});
+    assert(plan_to_json(escaped).find("\\u000a")!=std::string::npos);
+    std::cout << "6 planner tests passed\n";
 }
 

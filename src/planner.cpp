@@ -15,19 +15,29 @@ namespace {
 
 std::vector<std::string> split(const std::string& value, char delimiter) {
     std::vector<std::string> parts;
-    std::stringstream stream(value);
     std::string part;
-    while (std::getline(stream, part, delimiter)) {
-        if (!part.empty()) parts.push_back(part);
+    bool quoted = false;
+    for (std::size_t i=0; i<value.size(); ++i) {
+        const char ch=value[i];
+        if (delimiter == ',' && ch == '"') {
+            if (quoted && i+1<value.size() && value[i+1]=='"') { part.push_back('"'); ++i; }
+            else if (quoted || part.empty()) quoted=!quoted;
+            else throw std::invalid_argument("unexpected CSV quote");
+        } else if (ch == delimiter && !quoted) { parts.push_back(part); part.clear(); }
+        else part.push_back(ch);
     }
+    if (quoted) throw std::invalid_argument("unterminated CSV quote");
+    parts.push_back(part);
+    if (delimiter != ',') std::erase(parts, "");
     return parts;
 }
 
 std::string escape_json(const std::string& value) {
     std::string escaped;
-    for (char ch : value) {
-        if (ch == '"' || ch == '\\') escaped.push_back('\\');
-        escaped.push_back(ch);
+    constexpr char hex[]="0123456789abcdef";
+    for (unsigned char ch : value) {
+        if (ch < 0x20) { escaped += "\\u00"; escaped += hex[ch >> 4]; escaped += hex[ch & 15]; }
+        else { if (ch == '"' || ch == '\\') escaped.push_back('\\'); escaped.push_back(static_cast<char>(ch)); }
     }
     return escaped;
 }
@@ -62,7 +72,7 @@ void Scheduler::validate(const std::vector<Task>& tasks, const std::vector<Avail
         if (task.id.empty() || !ids.insert(task.id).second) throw std::invalid_argument("task ids must be unique");
         if (task.duration_minutes <= 0 || task.minimum_chunk <= 0) throw std::invalid_argument("durations must be positive");
         if (task.priority < 1 || task.priority > 5) throw std::invalid_argument("priority must be 1..5");
-        if (task.cognitive_load < 0 || task.cognitive_load > 1) throw std::invalid_argument("cognitive load must be 0..1");
+        if (!std::isfinite(task.cognitive_load) || task.cognitive_load < 0 || task.cognitive_load > 1) throw std::invalid_argument("cognitive load must be 0..1");
     }
     for (const auto& task : tasks) {
         for (const auto& dependency : task.dependencies) {
@@ -72,8 +82,11 @@ void Scheduler::validate(const std::vector<Task>& tasks, const std::vector<Avail
     if (dependency_cycle(tasks)) throw std::invalid_argument("task dependency cycle detected");
     for (const auto& slot : availability) {
         if (slot.end_minute <= slot.start_minute) throw std::invalid_argument("availability must have positive length");
-        if (slot.energy < 0 || slot.energy > 1) throw std::invalid_argument("energy must be 0..1");
+        if (!std::isfinite(slot.energy) || slot.energy < 0 || slot.energy > 1) throw std::invalid_argument("energy must be 0..1");
     }
+    auto sorted=availability;
+    std::sort(sorted.begin(),sorted.end(),[](const auto& a,const auto& b){return a.start_minute<b.start_minute;});
+    for(std::size_t i=1;i<sorted.size();++i) if(sorted[i].start_minute<sorted[i-1].end_minute) throw std::invalid_argument("availability windows overlap");
 }
 
 double Scheduler::score(const Task& task, const Availability& slot, int cursor, int remaining) {
@@ -141,7 +154,7 @@ std::vector<Task> read_tasks_csv(const std::string& path) {
     while (std::getline(file, line)) {
         if (line.empty()) continue;
         auto columns = split(line, ',');
-        if (columns.size() < 7) throw std::runtime_error("task row needs 7 columns");
+        if (columns.size() < 7 || columns.size() > 8) throw std::runtime_error("task row needs 7 or 8 columns");
         Task task{columns[0], columns[1], std::stoi(columns[2]), std::stoi(columns[3]),
                   std::stoi(columns[4]), std::stoi(columns[5]), std::stod(columns[6]), {}};
         if (columns.size() > 7 && columns[7] != "-") task.dependencies = split(columns[7], '|');
