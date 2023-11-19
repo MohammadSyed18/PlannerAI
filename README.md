@@ -32,3 +32,13 @@ ctest --test-dir build --output-on-failure
 ```
 
 JSON stays on standard output and the audit goes to standard error. Late work is reported rather than forbidden: deadlines are part of the scheduler's heuristic score, not a hard feasibility constraint. The auditor checks structural consistency independently of that heuristic and can also inspect externally assembled `Plan` objects through the C++ API.
+
+## Planning around fixed commitments
+
+```sh
+./build/planner data/tasks.csv data/availability.csv --busy data/busy.example.csv --audit
+```
+
+`calendar.hpp` / `calendar.cpp` compile availability after subtracting busy periods. Busy CSV uses the availability schema (`start_minute,end_minute,energy`); its energy column is ignored. Busy windows may overlap or touch and are merged before subtraction, while original availability must remain non-overlapping. Intervals are half-open, so a task can end exactly when a commitment begins. The CLI prints removed minutes and schedules against the resulting free windows.
+
+The library additionally accepts pre/post buffers and a minimum remaining window. It separately reports blocked minutes and short fragments discarded by that minimum; retained windows keep their original energy values. Intermediate arithmetic uses wider integers and rejects unrepresentable totals. Tests check overlap merging, complete blocking, extreme endpoints, energy preservation, and integration with the independent plan audit.
