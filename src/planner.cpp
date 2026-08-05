@@ -63,6 +63,7 @@ void Scheduler::validate(const std::vector<Task>& tasks, const std::vector<Avail
         if (task.duration_minutes <= 0 || task.minimum_chunk <= 0) throw std::invalid_argument("durations must be positive");
         if (task.priority < 1 || task.priority > 5) throw std::invalid_argument("priority must be 1..5");
         if (task.cognitive_load < 0 || task.cognitive_load > 1) throw std::invalid_argument("cognitive load must be 0..1");
+        if (task.deadline_minute <= 0) throw std::invalid_argument("deadline must be positive");
     }
     for (const auto& task : tasks) {
         for (const auto& dependency : task.dependencies) {
@@ -70,9 +71,15 @@ void Scheduler::validate(const std::vector<Task>& tasks, const std::vector<Avail
         }
     }
     if (dependency_cycle(tasks)) throw std::invalid_argument("task dependency cycle detected");
-    for (const auto& slot : availability) {
+    std::vector<Availability> ordered = availability;
+    std::sort(ordered.begin(), ordered.end(), [](const auto& left, const auto& right) {
+        return left.start_minute < right.start_minute;
+    });
+    for (std::size_t index = 0; index < ordered.size(); ++index) {
+        const auto& slot = ordered[index];
         if (slot.end_minute <= slot.start_minute) throw std::invalid_argument("availability must have positive length");
         if (slot.energy < 0 || slot.energy > 1) throw std::invalid_argument("energy must be 0..1");
+        if (index && slot.start_minute < ordered[index - 1].end_minute) throw std::invalid_argument("availability blocks must not overlap");
     }
 }
 
@@ -107,11 +114,12 @@ Plan Scheduler::build(std::vector<Task> tasks, std::vector<Availability> availab
             double best_score = -1e9;
             for (const auto& task : tasks) {
                 if (remaining[task.id] <= 0) continue;
+                if (cursor >= task.deadline_minute) continue;
                 const bool ready = std::all_of(task.dependencies.begin(), task.dependencies.end(), [&](const auto& dep) {
                     return completed.contains(dep);
                 });
                 if (!ready) continue;
-                const int free = slot.end_minute - cursor;
+                const int free = std::min(slot.end_minute, task.deadline_minute) - cursor;
                 if (free < std::min(task.minimum_chunk, remaining[task.id])) continue;
                 const double candidate = score(task, slot, cursor, remaining[task.id]);
                 if (candidate > best_score || (candidate == best_score && task.deadline_minute < best->deadline_minute)) {
@@ -120,7 +128,7 @@ Plan Scheduler::build(std::vector<Task> tasks, std::vector<Availability> availab
                 }
             }
             if (!best) break;
-            const int chunk = std::min(remaining[best->id], slot.end_minute - cursor);
+            const int chunk = std::min({remaining[best->id], slot.end_minute - cursor, best->deadline_minute - cursor});
             plan.blocks.push_back({best->id, best->title, cursor, cursor + chunk, best_score});
             plan.objective += best_score * chunk / 60.0;
             remaining[best->id] -= chunk;
@@ -128,7 +136,18 @@ Plan Scheduler::build(std::vector<Task> tasks, std::vector<Availability> availab
             if (remaining[best->id] == 0) completed.insert(best->id);
         }
     }
-    for (const auto& [id, minutes] : remaining) if (minutes > 0) plan.unscheduled_minutes[id] = minutes;
+    const int horizon = availability.empty() ? 0 : std::max_element(availability.begin(), availability.end(), [](const auto& left, const auto& right) {
+        return left.end_minute < right.end_minute;
+    })->end_minute;
+    for (const auto& [id, minutes] : remaining) if (minutes > 0) {
+        plan.unscheduled_minutes[id] = minutes;
+        const auto& task = by_id.at(id);
+        const bool blocked = std::any_of(task.dependencies.begin(), task.dependencies.end(), [&](const auto& dependency) {
+            return remaining.at(dependency) > 0;
+        });
+        plan.unscheduled_reasons[id] = blocked ? "dependency_incomplete"
+            : task.deadline_minute <= horizon ? "deadline_capacity" : "insufficient_capacity";
+    }
     return plan;
 }
 
@@ -188,9 +207,13 @@ std::string plan_to_json(const Plan& plan) {
     for (const auto& [id, minutes] : plan.unscheduled_minutes) {
         out << (index++ ? ", " : "") << "\"" << escape_json(id) << "\": " << minutes;
     }
+    out << "},\n  \"unscheduled_reasons\": {";
+    index = 0;
+    for (const auto& [id, reason] : plan.unscheduled_reasons) {
+        out << (index++ ? ", " : "") << "\"" << escape_json(id) << "\": \"" << escape_json(reason) << "\"";
+    }
     out << "}\n}\n";
     return out.str();
 }
 
 }  // namespace plannerai
-

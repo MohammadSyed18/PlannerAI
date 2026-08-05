@@ -33,10 +33,26 @@ void cycles_are_rejected() {
     assert(threw);
 }
 
+void hard_deadlines_are_never_crossed() {
+    std::vector<Task> tasks{{"due", "Due soon", 90, 5, 540, 30, .8, {}}};
+    Plan plan = Scheduler().build(tasks, {{510, 600, .8}});
+    assert(plan.blocks.size() == 1);
+    assert(plan.blocks[0].end_minute == 540);
+    assert(plan.unscheduled_minutes.at("due") == 60);
+    assert(plan.unscheduled_reasons.at("due") == "deadline_capacity");
+}
+
+void overlapping_availability_is_rejected() {
+    bool threw = false;
+    try { Scheduler().build({}, {{480, 540, .5}, {530, 600, .7}}); } catch (const std::invalid_argument&) { threw = true; }
+    assert(threw);
+}
+
 int main() {
     dependency_order_is_preserved();
     impossible_capacity_is_reported();
     cycles_are_rejected();
-    std::cout << "3 planner tests passed\n";
+    hard_deadlines_are_never_crossed();
+    overlapping_availability_is_rejected();
+    std::cout << "5 planner tests passed\n";
 }
-

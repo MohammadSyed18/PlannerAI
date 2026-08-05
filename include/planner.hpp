@@ -38,6 +38,7 @@ struct ScheduledBlock {
 struct Plan {
     std::vector<ScheduledBlock> blocks;
     std::unordered_map<std::string, int> unscheduled_minutes;
+    std::unordered_map<std::string, std::string> unscheduled_reasons;
     double objective{};
 };
 
@@ -56,4 +57,3 @@ std::string plan_to_json(const Plan& plan);
 std::string minute_to_clock(int minute);
 
 }  // namespace plannerai
-
