@@ -1,0 +1,7 @@
+id,title,duration_minutes,priority,deadline_minute,minimum_chunk,cognitive_load,dependencies
+research,Research scholarship requirements,75,5,1260,25,0.85,-
+outline,Outline application essay,50,4,1320,25,0.70,research
+draft,Draft application essay,120,5,2700,30,0.85,outline
+robotics,Refactor autonomous pathing,90,3,2820,30,0.75,-
+email,Reply to team email,20,2,1140,10,0.25,-
+
