@@ -1,12 +1,14 @@
 # PlannerAI
 
-PlannerAI is a C++ scheduling engine that turns tasks, deadlines, dependencies, available time blocks, and an hourly energy curve into a realistic work plan. The optimizer favors urgent/high-value work, avoids prerequisite violations, and can split long tasks across multiple blocks.
+A C++ scheduler for tasks that have deadlines, prerequisites, and different energy requirements. It fits work into available blocks and can split a long task across them.
 
-Current state: CSV input, constraint checks, scoring, scheduling, JSON output, a demo dataset, and core tests are working. Calendar import and interactive replanning are still in progress.
+The name aside, the scheduling here is heuristic: it scores work by urgency, priority, and energy rather than calling an AI model.
 
-```bash
-cmake -S . -B build && cmake --build build
+```sh
+cmake -S . -B build
+cmake --build build
 ./build/planner data/tasks.csv data/availability.csv
 ctest --test-dir build --output-on-failure
 ```
 
+CSV input, dependency checks, scheduling, and JSON output are implemented. Calendar import and interactive replanning are still in progress.
